@@ -4,6 +4,10 @@
 //! Kept as a session child module solely to retain private generation handles
 //! for post-exit resource assertions, without exposing a production test API.
 //! Run: cargo test --offline --lib session::proxy_lifecycle_tests -- --nocapture
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::*;
 use crate::proxy::{ProxyConfig, ProxyServer};
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
@@ -13,7 +17,7 @@ use std::sync::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::Semaphore,
     task::JoinHandle,
 };
@@ -142,7 +146,7 @@ impl Gateway {
             "/src/gp/testdata/localhost-cert.pem"
         ))))
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let client = GatewayClient::new(
             url::Url::parse(&format!(
                 "https://localhost:{}",

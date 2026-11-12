@@ -1,5 +1,9 @@
 //! Explicit reauthentication uses only public synthetic loopback TLS fixtures.
 //! No actual credentials, gateway, host business socket or virtual device.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::*;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "reauth_churn.rs"]
@@ -18,9 +22,11 @@ use crate::{
 };
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use tokio::net::TcpListener;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::Semaphore,
     task::{JoinHandle, JoinSet},
     time::timeout,
@@ -109,7 +115,7 @@ impl Gateway {
             "/src/gp/testdata/localhost-cert.pem"
         ))))
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

@@ -10,6 +10,11 @@ use std::{
 const INSTALL: [u8; 16] = [0x12; 16];
 const LABEL: &str = "io.gp-proxy.12121212121212121212121212121212.g0000000000000008";
 const HELPER_MODE: &str = "GP_PROXY_LAUNCHD_EXECUTOR_TEST";
+const ABSOLUTE_ROOT: &str = if cfg!(windows) { "C:/" } else { "/" };
+
+fn absolute_fixture(path: &str) -> PathBuf {
+    PathBuf::from(format!("{ABSOLUTE_ROOT}{path}"))
+}
 
 fn identity() -> ManagedIdentity {
     ManagedIdentity {
@@ -69,6 +74,7 @@ fn generation_label_parser_rejects_legacy_and_noncanonical_targets() {
 
 #[test]
 fn typed_actions_have_only_exact_allowed_targets_and_arguments() {
+    let plist = absolute_fixture("private/space & directory/agent.plist");
     let cases = [
         (Action::ProbeDomain { uid: 501 }, vec!["print", "gui/501"]),
         (
@@ -84,13 +90,9 @@ fn typed_actions_have_only_exact_allowed_targets_and_arguments() {
         (
             Action::Bootstrap {
                 uid: 501,
-                plist: "/private/space & directory/agent.plist".into(),
+                plist: plist.clone(),
             },
-            vec![
-                "bootstrap",
-                "gui/501",
-                "/private/space & directory/agent.plist",
-            ],
+            vec!["bootstrap", "gui/501", plist.to_str().unwrap()],
         ),
         (
             Action::Bootout {
@@ -141,30 +143,45 @@ fn typed_actions_have_only_exact_allowed_targets_and_arguments() {
         .arguments()
         .is_err());
     }
+    let maximum_path = format!("{ABSOLUTE_ROOT}{}", "x".repeat(1024 - ABSOLUTE_ROOT.len()));
+    assert_eq!(maximum_path.len(), 1024);
+    let oversized_path = format!("{maximum_path}x");
+    assert_eq!(oversized_path.len(), 1025);
     for path in [
-        "relative.plist".to_owned(),
-        format!("/{}", "x".repeat(1024)),
-        "/nul\0path".into(),
+        PathBuf::from("relative.plist"),
+        PathBuf::from(oversized_path),
+        absolute_fixture("nul\0path"),
     ] {
         assert!(Action::Bootstrap {
             uid: 501,
-            plist: path.into()
+            plist: path
         }
         .arguments()
         .is_err());
     }
     assert!(Action::Bootstrap {
         uid: 501,
-        plist: format!("/{}", "x".repeat(1023)).into()
+        plist: maximum_path.into()
     }
     .arguments()
     .is_ok());
+    #[cfg(windows)]
+    for path in ["/rooted-only.plist", "C:relative.plist"] {
+        assert!(Action::Bootstrap {
+            uid: 501,
+            plist: path.into(),
+        }
+        .arguments()
+        .is_err());
+    }
 }
 
 #[test]
 fn plist_round_trips_exact_arguments_without_shell_or_ambient_settings() {
-    let binary = Path::new("/private/合成 path/'<&>\"\r/gp-proxy");
-    let directory = Path::new("/private/runtime & <管理>");
+    let binary_path = absolute_fixture("private/合成 path/'<&>\"\r/gp-proxy");
+    let directory_path = absolute_fixture("private/runtime & <管理>");
+    let binary = binary_path.as_path();
+    let directory = directory_path.as_path();
     let bytes = render_plist(501, LABEL, binary, directory, &identity()).unwrap();
     let text = std::str::from_utf8(&bytes).unwrap();
     let document = roxmltree::Document::parse_with_options(
@@ -243,7 +260,14 @@ fn plist_round_trips_exact_arguments_without_shell_or_ambient_settings() {
     invalid_id.generation = 0;
     assert!(render_plist(501, LABEL, binary, directory, &invalid_id).is_err());
     assert!(render_plist(0, LABEL, binary, directory, &identity()).is_err());
-    assert!(render_plist(501, LABEL, Path::new("/bad\u{1}"), directory, &identity()).is_err());
+    assert!(render_plist(
+        501,
+        LABEL,
+        &absolute_fixture("bad\u{1}"),
+        directory,
+        &identity()
+    )
+    .is_err());
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;

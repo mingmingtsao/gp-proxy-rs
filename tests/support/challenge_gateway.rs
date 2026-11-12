@@ -1,4 +1,8 @@
 //! Fixed-capacity synthetic challenge gateway. No external authentication.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use crate::gp::{self, GatewayClient, ResumptionPolicy};
 use crate::session::proxy_lifecycle_tests::echo_peer;
 #[path = "gp_echo_tunnel.rs"]
@@ -15,7 +19,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::Semaphore,
     task::{JoinHandle, JoinSet},
     time::timeout,
@@ -190,7 +194,7 @@ impl Gateway {
         .with_no_client_auth()
         .with_single_cert(certificates, key)
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

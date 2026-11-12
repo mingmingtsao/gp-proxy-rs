@@ -841,6 +841,12 @@ async fn read_http_body<R: AsyncRead + Unpin>(reader: &mut R) -> Result<SecretBu
 }
 
 #[cfg(test)]
+#[path = "../../tests/support/localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
+
+#[cfg(test)]
 #[path = "challenge_tests.rs"]
 mod challenge_tests;
 
@@ -937,7 +943,7 @@ mod tests {
     ) {
         timeout(Duration::from_secs(10), async {
             let (client_tls, server_tls) = mock_tls_configs(version);
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = localhost_fixture::bind().await.unwrap();
             let gateway = Url::parse(&format!("https://localhost:{}", listener.local_addr().unwrap().port())).unwrap();
             let (anchor_tx, anchor_rx) = tokio::sync::oneshot::channel();
             let server = tokio::spawn(async move {

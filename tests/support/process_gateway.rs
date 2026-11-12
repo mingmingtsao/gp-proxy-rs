@@ -1,5 +1,9 @@
 //! Bounded direct-password GP fixture with parent-process raw-IP observations.
 //! No host business sockets, interfaces, or host DNS are used by the data peer.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use gp_proxy::gp;
 #[path = "echo_peer.rs"]
 mod echo_peer;
@@ -17,7 +21,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::{mpsc, Semaphore},
     task::{JoinHandle, JoinSet},
     time::timeout,
@@ -161,7 +165,7 @@ impl Gateway {
         .with_no_client_auth()
         .with_single_cert(certificates, key)
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

@@ -1,5 +1,9 @@
 //! Two fixed-capacity, independently trusted TLS origins; public synthetic input only.
 //! Shared by service child-module and actual-CLI tests via parent gp/echo_peer imports.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::{echo_peer, gp};
 #[path = "portal_tunnel.rs"]
 mod portal_tunnel;
@@ -246,12 +250,12 @@ pub struct DualOrigins {
 impl DualOrigins {
     pub async fn start(plan: Plan) -> Self {
         assert!(plan.rounds <= 4);
-        let gateway_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let gateway_listener = localhost_fixture::bind().await.unwrap();
         let fixed_gateway = format!(
             "localhost:{}",
             gateway_listener.local_addr().unwrap().port()
         );
-        let portal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let portal_listener = localhost_fixture::bind().await.unwrap();
         let gateway = Endpoint::start(gateway_listener, false, fixed_gateway.clone(), plan).await;
         let portal = Endpoint::start(portal_listener, true, fixed_gateway, plan).await;
         assert_ne!(portal.origin, gateway.origin);

@@ -1481,6 +1481,12 @@ fn termination_signal() -> io::Result<impl Future<Output = io::Result<()>>> {
 }
 
 #[cfg(test)]
+#[path = "../tests/support/localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use gp_proxy::gp::Session;
@@ -1599,7 +1605,7 @@ mod tests {
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let gateway = url::Url::parse(&format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

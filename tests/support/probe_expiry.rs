@@ -1,11 +1,15 @@
 //! Synthetic TLS checks of expiry followed by authenticated logout cleanup.
 //! No tunnel is accepted: any attempt to create one fails this fixture.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::*;
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
 };
 
 const COOKIE: &str = "synthetic-probe-expiry-cookie";
@@ -32,7 +36,7 @@ async fn gateway(request_count: usize) -> (GatewayClient, JoinHandle<Vec<String>
         "/src/gp/testdata/localhost-cert.pem"
     ))))
     .unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = localhost_fixture::bind().await.unwrap();
     let client = GatewayClient::new(
         url::Url::parse(&format!(
             "https://localhost:{}",

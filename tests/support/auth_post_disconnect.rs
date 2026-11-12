@@ -1,5 +1,9 @@
 //! Direct authentication when a server loses its reply after receiving the POST.
 //! No real credentials, DNS, interfaces, or remote gateways are involved.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::*;
 use crate::service::challenge_tests::gateway::gp_echo_tunnel;
 use crate::{gp::ResumptionPolicy, proxy::Target};
@@ -10,7 +14,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::Semaphore,
     task::{JoinHandle, JoinSet},
     time::timeout,
@@ -62,7 +66,7 @@ impl Gateway {
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

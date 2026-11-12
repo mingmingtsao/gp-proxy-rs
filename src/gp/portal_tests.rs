@@ -1,3 +1,8 @@
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "../../tests/support/localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use super::*;
 
 fn gateway() -> Url {
@@ -225,7 +230,6 @@ mod wire {
     use std::{collections::HashMap, io, time::Duration};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
         task::JoinHandle,
         time::timeout,
     };
@@ -301,7 +305,7 @@ mod wire {
                 .with_no_client_auth()
                 .with_single_cert(certificates, key)
                 .unwrap();
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = localhost_fixture::bind().await.unwrap();
             let origin = Url::parse(&format!(
                 "https://localhost:{}",
                 listener.local_addr().unwrap().port()

@@ -1,7 +1,7 @@
 //! Independent synthetic TLS wire assertions; no real credentials or gateway.
 use super::*;
 use std::{collections::HashMap, io};
-use tokio::{net::TcpListener, task::JoinHandle};
+use tokio::task::JoinHandle;
 use url::form_urlencoded;
 
 const SESSION: &str = "<jnlp><application-desc><argument/><argument>synthetic-cookie</argument><argument/><argument>gateway</argument><argument>original-user</argument><argument>auth</argument><argument>vsys1</argument><argument>domain</argument><argument/><argument/><argument/><argument/><argument>tunnel</argument><argument>-1</argument><argument>4100</argument></application-desc></jnlp>";
@@ -41,7 +41,7 @@ impl Gateway {
     async fn new(responses: Vec<String>) -> Self {
         assert!(responses.len() <= 8);
         let (client_tls, server_tls) = super::tests::mock_tls_configs(&rustls::version::TLS13);
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = Url::parse(&format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()
@@ -342,7 +342,7 @@ async fn credential_write_gate_runs_after_tls_and_denies_all_http_bytes() {
         for version in [&rustls::version::TLS12, &rustls::version::TLS13] {
             for cancelled in [true, false] {
                 let (client_tls, server_tls) = super::tests::mock_tls_configs(version);
-                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let listener = localhost_fixture::bind().await.unwrap();
                 let client = GatewayClient::new(
                     Url::parse(&format!("https://localhost:{}", listener.local_addr().unwrap().port())).unwrap(),
                     client_tls,
@@ -360,7 +360,7 @@ async fn credential_write_gate_runs_after_tls_and_denies_all_http_bytes() {
                     let mut tls = tokio_rustls::TlsAcceptor::from(server_tls).accept(tcp).await.unwrap();
                     let mut first = [0u8; 1];
                     let end = timeout(Duration::from_secs(1), tls.read(&mut first)).await.unwrap();
-                    assert!(matches!(end, Ok(0)) || matches!(end, Err(ref error) if matches!(error.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset)));
+                    assert!(matches!(end, Ok(0)) || matches!(end, Err(ref error) if matches!(error.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted)), "credential gate must send no HTTP bytes: {end:?}");
                     assert!(timeout(Duration::from_millis(30), listener.accept()).await.is_err());
                 };
                 let (result, ()) = tokio::join!(login, server);

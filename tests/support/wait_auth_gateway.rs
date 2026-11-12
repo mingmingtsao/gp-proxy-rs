@@ -1,4 +1,8 @@
 //! Fixed-capacity synthetic TLS gateway for the external CLI tests.
+#[path = "localhost.rs"]
+// Share one fixture source across unit modules and independent integration crates.
+#[allow(clippy::duplicate_mod)]
+mod localhost_fixture;
 use gp_proxy::gp;
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use std::{
@@ -11,7 +15,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::Semaphore,
     task::{JoinHandle, JoinSet},
     time::timeout,
@@ -69,7 +73,7 @@ impl Gateway {
         .with_no_client_auth()
         .with_single_cert(certificates, key)
         .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = localhost_fixture::bind().await.unwrap();
         let origin = format!(
             "https://localhost:{}",
             listener.local_addr().unwrap().port()

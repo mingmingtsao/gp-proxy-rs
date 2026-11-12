@@ -499,6 +499,58 @@ mod tests {
         Policy::new(vec![domain.into()], Vec::new()).unwrap()
     }
 
+    fn isolated_lock_lifetime_test(name: &str) -> bool {
+        use std::{
+            process::{Child, Command, Stdio},
+            time::{Duration, Instant},
+        };
+        const CHILD_TEST: &str = "GP_SYNTHETIC_PAC_LOCK_LIFETIME_TEST";
+        let test = format!("pac_history::tests::{name}");
+        if std::env::var_os(CHILD_TEST).as_deref() == Some(std::ffi::OsStr::new(&test)) {
+            return false;
+        }
+
+        // The fixture must be created after exec: unrelated parallel tests may
+        // fork while a lifetime lock is held, inheriting its file description
+        // until their exec/exit. That is valid ownership, not a failed close.
+        struct Running(Child);
+        impl Drop for Running {
+            fn drop(&mut self) {
+                if self.0.try_wait().ok().flatten().is_none() {
+                    let _ = self.0.kill();
+                }
+                let _ = self.0.wait();
+            }
+        }
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", &test, "--test-threads=1", "--nocapture"])
+            .env_clear()
+            .env(CHILD_TEST, &test)
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        // Keep only OS temporary-directory settings needed by Fixture::new.
+        for key in ["TMPDIR", "TMP", "TEMP", "SystemRoot"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        let mut process = Running(command.spawn().unwrap());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = process.0.try_wait().unwrap() {
+                assert!(status.success(), "isolated PAC lock test {name}: {status}");
+                return true;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "isolated PAC lock test {name} timed out"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     #[test]
     fn absent_read_is_empty_and_does_not_create_any_file() {
         let fixture = Fixture::new();
@@ -508,6 +560,11 @@ mod tests {
 
     #[test]
     fn restart_remembers_positive_scope_without_preserving_exclusions() {
+        if isolated_lock_lifetime_test(
+            "restart_remembers_positive_scope_without_preserving_exclusions",
+        ) {
+            return;
+        }
         let fixture = Fixture::new();
         let original = Policy::new(
             vec!["Corp.Example.".into()],
@@ -555,6 +612,11 @@ mod tests {
 
     #[test]
     fn exclusive_writer_lock_survives_shared_owner_and_threads_union_updates() {
+        if isolated_lock_lifetime_test(
+            "exclusive_writer_lock_survives_shared_owner_and_threads_union_updates",
+        ) {
+            return;
+        }
         let fixture = Fixture::new();
         let history =
             Arc::new(PacHistory::open(&fixture.path(), &policy("original.example")).unwrap());
@@ -581,8 +643,21 @@ mod tests {
         for id in 0..8 {
             assert!(stored.allows_host(&format!("worker{id}.example")));
         }
+        // On Unix, try_clone retains the same open file description as fork.
+        // Dropping the final Arc must not explicitly unlock that shared lease.
+        #[cfg(unix)]
+        let inherited = retained.lock.try_clone().unwrap();
         drop(retained);
-        assert!(PacHistory::open(&fixture.path(), &empty().unwrap()).is_ok());
+        #[cfg(unix)]
+        {
+            match PacHistory::open(&fixture.path(), &empty().unwrap()) {
+                Err(error) => assert_eq!(error.kind(), io::ErrorKind::WouldBlock),
+                Ok(_) => panic!("writer acquired a lock still owned by a cloned descriptor"),
+            }
+            drop(inherited);
+        }
+        let reopened = PacHistory::open(&fixture.path(), &empty().unwrap()).unwrap();
+        assert_eq!(reopened.remember(&empty().unwrap()).unwrap(), stored);
     }
 
     #[test]
@@ -630,6 +705,9 @@ mod tests {
 
     #[test]
     fn initialized_history_removal_fails_both_reader_and_writer() {
+        if isolated_lock_lifetime_test("initialized_history_removal_fails_both_reader_and_writer") {
+            return;
+        }
         let fixture = Fixture::new();
         let history = PacHistory::open(&fixture.path(), &policy("old.example")).unwrap();
         fs::remove_file(fixture.path()).unwrap();
@@ -637,7 +715,10 @@ mod tests {
         assert!(history.remember(&policy("new.example")).is_err());
         assert_eq!(*history.state.lock().unwrap(), policy("old.example"));
         drop(history);
-        assert!(PacHistory::open(&fixture.path(), &empty().unwrap()).is_err());
+        match PacHistory::open(&fixture.path(), &empty().unwrap()) {
+            Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidData),
+            Ok(_) => panic!("writer recreated an initialized history that was removed"),
+        }
         assert_eq!(fs::read(sidecar(&fixture.path())).unwrap(), MARKER);
     }
 
