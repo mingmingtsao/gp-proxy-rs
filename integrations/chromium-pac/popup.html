@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gp-proxy 严格 PAC</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <h1>gp-proxy 严格 PAC</h1>
+  <p id="status" role="status" aria-live="polite">正在检查浏览器设置…</p>
+  <label for="pac-url">本机 PAC 地址</label>
+  <input id="pac-url" type="text" value="http://127.0.0.1:8080/proxy.pac" spellcheck="false" autocomplete="off" maxlength="100">
+  <p class="hint">仅接受 127.0.0.1 或 [::1]、明确端口及 /proxy.pac 路径。</p>
+  <div class="actions">
+    <button id="enable" disabled>启用严格 PAC</button>
+    <button id="refresh" disabled>刷新规则</button>
+    <button id="disable" disabled>停用并恢复原设置</button>
+  </div>
+  <p id="error" role="alert"></p>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <p>启用后，PAC 无法加载或无效时会阻断浏览器访问；已识别的企业请求不会因此自动直连。停用会恢复浏览器底层配置。</p>
+  <p>浏览器会缓存 PAC。新增企业规则后请点击“刷新规则”，关闭旧连接并验证目标规则后再访问。刷新不撤销已发出的请求，本扩展不能识别规则里未知的企业域名。</p>
+  <p class="hint">设置保存于当前普通浏览器配置。隐私窗口可能继承，也可能被独立设置覆盖；本版本未验证隐私窗口。未启用前不改变代理。</p>
+</body>
+</html>

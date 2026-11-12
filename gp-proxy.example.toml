@@ -1,0 +1,32 @@
+# Copy to gp-proxy.toml. No credentials belong in this file.
+gateway = "https://vpn.example.com"
+http_listen = "127.0.0.1:8080"
+socks_listen = "127.0.0.1:1080"
+# Explicit authorization, never infer all private IPs to be company resources.
+domains = ["corp.example.com"]
+networks = ["10.20.0.0/16"]
+# Optional extra PEM root CA; certificate verification is always enabled.
+# ca_file = "/absolute/path/corporate-ca.pem"
+# Experimental portal mode: synthetic validation only; see README.md for limitations.
+# Keep direct password mode unless the administrator confirms cookie handoff.
+# portal = "https://portal.example.com"
+# portal_ca_file = "/absolute/path/portal-ca.pem"
+# Maximum application connections across HTTP/SOCKS. The service separately
+# bounds 32 HTTP handshakes/local requests and four transient DNS stack slots.
+max_connections = 128
+connect_timeout_secs = 15
+idle_timeout_secs = 300
+reconnect_max_secs = 60
+# Local schedule in direct-gateway mode; not a portal-negotiated value.
+# 3540s checks before PAN's default 1h interval. Use an administrator-approved
+# shorter interval when required (allowed: 60..=3600). No HIP report is generated.
+hip_check_interval_secs = 3540
+# Add authenticated gateway split-tunnel domains and included IPv4 routes.
+# DNS search suffixes never authorize traffic. Exact names and *.domain are supported;
+# unverified wildcard/port encodings fail closed. Gateway exclusions always apply.
+trust_gateway_routes = false
+# PAC remembers previously classified company resources across restarts. By default
+# the history lives beside this config: gp-proxy.pac-history.json (+ .lock).
+# An override is relative to this config's directory; use a local writable directory.
+# Keep this file when moving/upgrading the config. It grants no egress permission.
+# pac_history_file = "gp-proxy.pac-history.json"

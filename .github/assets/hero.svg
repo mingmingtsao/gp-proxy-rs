@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="396" viewBox="0 0 1200 396" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">gp-proxy-rs — GlobalProtect as a local proxy</title>
+  <desc id="description">Application traffic enters a loopback HTTP or SOCKS5 proxy, crosses an in-memory Rust TCP/IP stack, and reaches corporate resources through a GlobalProtect TLS tunnel. No virtual network interface or system routing changes.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1200" y2="396" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111f33"/>
+      <stop offset="1" stop-color="#09131f"/>
+    </linearGradient>
+    <linearGradient id="connection" x1="260" y1="280" x2="930" y2="280" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4c93b4"/>
+      <stop offset="1" stop-color="#73e1c2"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#afc7e5" fill-opacity=".07"/>
+    </pattern>
+  </defs>
+  <rect x="1" y="1" width="1198" height="394" rx="24" fill="url(#background)" stroke="#26374b" stroke-width="2"/>
+  <rect x="24" y="24" width="1152" height="348" rx="12" fill="url(#grid)"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <circle cx="58" cy="47" r="4" fill="#73e1c2"/>
+    <text x="72" y="52" fill="#9aafc7" font-size="13" font-weight="600" letter-spacing="2.1">GLOBALPROTECT · APP-LEVEL ACCESS</text>
+    <text x="52" y="122" fill="#f0f6ff" font-size="60" font-weight="700" letter-spacing="-2">gp-proxy<tspan fill="#73e1c2">-rs</tspan></text>
+    <text x="56" y="160" fill="#a8bacf" font-size="21">A VPN path for your apps. Your system network stays yours.</text>
+    <rect x="906" y="50" width="238" height="95" rx="14" fill="#102b2c" stroke="#2b5d57"/>
+    <path d="M930 77h13m-13 7h20m-20 7h13" stroke="#73e1c2" stroke-width="2" stroke-linecap="round"/>
+    <text x="965" y="85" fill="#c0f6e7" font-size="17" font-weight="600">NO VIRTUAL NIC</text>
+    <text x="930" y="117" fill="#87b8ad" font-size="14">No route or DNS changes</text>
+
+    <path d="M258 263H942" stroke="url(#connection)" stroke-width="2"/>
+    <path d="m300 258 6 5-6 5m302-10 6 5-6 5m302-10 6 5-6 5" stroke="#73e1c2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="56" y="211" width="212" height="104" rx="13" fill="#142237" stroke="#38516e"/>
+    <rect x="76" y="233" width="20" height="16" rx="3" stroke="#91b8f4" stroke-width="1.7"/>
+    <path d="M80 253h12m-6-4v4" stroke="#91b8f4" stroke-width="1.7" stroke-linecap="round"/>
+    <text x="110" y="249" fill="#e4edf9" font-size="19" font-weight="600">Your apps</text>
+    <text x="76" y="287" fill="#99acc6" font-size="15">Browser · CLI · IDE</text>
+
+    <rect x="338" y="211" width="232" height="104" rx="13" fill="#112e32" stroke="#39796c"/>
+    <circle cx="368" cy="243" r="9" stroke="#73e1c2" stroke-width="1.7"/>
+    <circle cx="368" cy="243" r="3" fill="#73e1c2"/>
+    <text x="390" y="249" fill="#d9faee" font-size="19" font-weight="600">Local proxy</text>
+    <text x="358" y="287" fill="#9acbbb" font-size="15">HTTP · SOCKS5 · PAC</text>
+
+    <rect x="640" y="211" width="232" height="104" rx="13" fill="#112e32" stroke="#39796c"/>
+    <path d="m661 237 10-5 10 5-10 5-10-5Zm0 6 10 5 10-5m-20 6 10 5 10-5" stroke="#73e1c2" stroke-width="1.7" stroke-linejoin="round"/>
+    <text x="694" y="249" fill="#d9faee" font-size="19" font-weight="600">In-memory IP</text>
+    <text x="660" y="287" fill="#9acbbb" font-size="15">Rust · smoltcp · DNS</text>
+
+    <rect x="942" y="211" width="202" height="104" rx="13" fill="#142237" stroke="#38516e"/>
+    <path d="M965 234h15v20h-15zM969 239h7m-7 5h7m-7 5h3" stroke="#91b8f4" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="994" y="249" fill="#e4edf9" font-size="19" font-weight="600">Gateway</text>
+    <text x="962" y="287" fill="#99acc6" font-size="15">GlobalProtect · TLS</text>
+
+    <text x="56" y="356" fill="#718ba8" font-size="13" letter-spacing="1.1">LOOPBACK IN. AUTHORIZED TUNNEL OUT.</text>
+    <text x="1144" y="356" fill="#73e1c2" font-size="13" font-weight="600" text-anchor="end" letter-spacing="1.1">NO DIRECT FALLBACK</text>
+  </g>
+</svg>

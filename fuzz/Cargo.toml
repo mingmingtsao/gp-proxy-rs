@@ -1,0 +1,26 @@
+[package]
+name = "gp-proxy-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# A separate development workspace: no fuzzing runtime in the product graph.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+gp-proxy-rs = { path = ".." }
+
+[patch.crates-io]
+smoltcp = { path = "../vendor/smoltcp" }
+
+[[bin]]
+name = "gp_boundary"
+path = "fuzz_targets/gp_boundary.rs"
+test = false
+doc = false
+bench = false

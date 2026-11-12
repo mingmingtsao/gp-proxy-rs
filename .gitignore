@@ -1,0 +1,36 @@
+/target/
+/logs/
+**/target/
+/gp-proxy.toml
+/session.json
+*.pac-history.json
+*.pac-history.json.lock
+*.pac-history.json.tmp-*
+*.control/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!src/gp/testdata/localhost-cert.pem
+!src/gp/testdata/localhost-key.pem
+!tests/support/tls-interop/ca-rsa-cert.pem
+!tests/support/tls-interop/ca-rsa-key.pem
+!tests/support/tls-interop/ca-ecdsa-cert.pem
+!tests/support/tls-interop/ca-ecdsa-key.pem
+!tests/support/tls-interop/rsa-cert.pem
+!tests/support/tls-interop/rsa-key.pem
+!tests/support/tls-interop/ecdsa-cert.pem
+!tests/support/tls-interop/ecdsa-key.pem
+!tests/support/tls-interop/expired-cert.pem
+!tests/support/tls-interop/wrong-eku-cert.pem
+.DS_Store
+__pycache__/
+
+# Local research, operational evidence and internal distribution tooling.
+# Keep the public repository focused on the application and its tests.
+/docs/*
+!/docs/dependency-licenses.md
+!/docs/smoltcp-patch.md
+/scripts/package-preview.py
+/scripts/tests/test_package_preview.py

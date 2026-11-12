@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; font: 14px/1.55 system-ui, sans-serif; }
+body { width: 360px; margin: 0; padding: 20px; }
+h1 { font-size: 18px; margin: 0 0 12px; }
+p { margin: 12px 0; }
+label { display: block; margin-bottom: 6px; font-weight: 600; }
+input { box-sizing: border-box; width: 100%; padding: 9px; font: inherit; }
+.hint { font-size: 12px; opacity: .8; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px; font: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .5; }
+#error { color: light-dark(#a32216, #ffb4ab); }
+#error:empty, #notice:empty { display: none; }

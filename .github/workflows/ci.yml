@@ -1,0 +1,44 @@
+name: Rust validation
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute generated PAC without DNS helpers
+        run: node scripts/tests/check-pac.cjs
+      - name: Verify the maintained TCP dependency with in-memory devices only
+        run: cargo test --locked --manifest-path vendor/smoltcp/Cargo.toml --no-default-features --features std,medium-ip,proto-ipv4,proto-ipv6,socket-tcp,socket-tcp-cubic,socket-udp --lib
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo fetch --locked
+      - run: python scripts/check-dependencies.py
+      - run: python scripts/dependency-licenses.py --check
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - name: Check dependency audit failure handling
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - run: cargo install cargo-audit --version 0.23.0 --locked
+      - run: python3 scripts/audit-dependencies.py
+      - run: python3 scripts/check-vendor.py --self-check
+      - name: Fetch the pinned upstream archive for the vendor comparison
+        run: curl --fail --silent --show-error --location --output "$RUNNER_TEMP/smoltcp-0.14.0.crate" https://static.crates.io/crates/smoltcp/smoltcp-0.14.0.crate
+      - name: Verify the archive checksum and exact local patch
+        run: python3 scripts/check-vendor.py --archive "$RUNNER_TEMP/smoltcp-0.14.0.crate"

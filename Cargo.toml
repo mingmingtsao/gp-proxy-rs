@@ -1,0 +1,71 @@
+[package]
+name = "gp-proxy-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+description = "GlobalProtect application proxy with an entirely userspace Rust network stack"
+license = "MIT"
+repository = "https://github.com/mingmingtsao/gp-proxy-rs"
+readme = "README.md"
+keywords = ["globalprotect", "proxy", "vpn", "socks5"]
+categories = ["network-programming", "command-line-utilities"]
+
+[lib]
+name = "gp_proxy"
+
+[[bin]]
+name = "gp-proxy"
+path = "src/main.rs"
+
+[dependencies]
+aws-lc-rs = { version = "=1.19.0", default-features = false, features = ["non-fips"] }
+clap = { version = "4.5", features = ["derive"] }
+ed25519-dalek = { version = "=3.0.0", default-features = false }
+httparse = "1.10"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+hyper = { version = "1.12", default-features = false, features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
+hickory-proto = { version = "0.26.3", default-features = false, features = ["std"] }
+ipnet = { version = "2", features = ["serde"] }
+getrandom = "0.4"
+rand = "0.8"
+rpassword = "7"
+roxmltree = "0.21"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-tcp-cubic", "socket-udp"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full", "test-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-appender = { version = "=0.2.5", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+webpki-roots = "1"
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+log = "=0.4.35"
+
+# Safe local IPC publication and cancellable Unix terminal operations.
+# 1.1.6 also fixes RUSTSEC-2026-0486; never use the earlier probe's 1.1.5.
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"))))'.dependencies]
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "fs", "termios", "process"] }
+
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"))))'.dev-dependencies]
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "pty"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[patch.crates-io]
+smoltcp = { path = "vendor/smoltcp" }

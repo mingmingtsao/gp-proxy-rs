@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "gp-proxy 严格 PAC",
+  "version": "0.1.0",
+  "description": "由用户启用本机 gp-proxy PAC；PAC 无法加载时阻止浏览器自动直连。",
+  "permissions": ["proxy"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "gp-proxy 严格 PAC" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'"
+  }
+}

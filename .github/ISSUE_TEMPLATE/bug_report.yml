@@ -1,0 +1,38 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem without credentials or internal network details.
+body:
+  - type: markdown
+    attributes:
+      value: "请勿提交密码、Cookie、.env、私钥或生产抓包；请用 example.com 替换内部域名。安全漏洞请使用仓库 Security 页的私密报告入口。"
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of gp-proxy --version and the commit, if built from source.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: macOS, Apple Silicon
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the proxy type and authentication method, without secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics (optional)
+      description: Status output or a minimal synthetic example is preferable to full logs.
