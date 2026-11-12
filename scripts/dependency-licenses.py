@@ -13,7 +13,7 @@ root = Path(__file__).resolve().parents[1]
 
 
 def cargo(*arguments):
-    return subprocess.check_output(["cargo", *arguments], cwd=root, text=True)
+    return subprocess.check_output(["cargo", *arguments], cwd=root, encoding="utf-8")
 
 
 metadata = json.loads(cargo("metadata", "--format-version", "1", "--locked", "--offline"))
@@ -40,8 +40,8 @@ text = f"""# 锁定依赖许可证清单
 text += "".join(f"| {p['name']} | {p['version']} | {p['license']} |\n" for p in packages)
 output = root / "docs/dependency-licenses.md"
 if args.check:
-    if not output.exists() or output.read_text() != text:
+    if not output.exists() or output.read_text(encoding="utf-8") != text:
         raise SystemExit("License inventory is stale; regenerate with scripts/dependency-licenses.py")
 else:
-    output.write_text(text)
+    output.write_text(text, encoding="utf-8", newline="\n")
 print(f"License inventory {'verified' if args.check else 'generated'}: {len(packages)} active packages")
