@@ -1,5 +1,6 @@
 /vendor/** linguist-vendored -whitespace
 *.rs text eol=lf
 *.toml text eol=lf
+*.lock text eol=lf
 *.md text eol=lf
 *.sh text eol=lf
