@@ -23,6 +23,12 @@ fn command() -> Command {
         ])
         .stdin(Stdio::null())
         .kill_on_drop(true);
+    // Keep OS socket-provider setup without inheriting application settings.
+    #[cfg(windows)]
+    command.env(
+        "SystemRoot",
+        std::env::var_os("SystemRoot").expect("Windows fixture requires SystemRoot"),
+    );
     command
 }
 

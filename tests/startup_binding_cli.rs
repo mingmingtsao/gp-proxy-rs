@@ -45,6 +45,12 @@ impl Fixture {
             .env_clear()
             .current_dir(&self.0)
             .args(["--config", "proxy.toml"]);
+        // Native socket providers need the Windows installation directory.
+        #[cfg(windows)]
+        command.env(
+            "SystemRoot",
+            std::env::var_os("SystemRoot").expect("Windows fixture requires SystemRoot"),
+        );
         if env {
             let credentials = self.0.join("synthetic-credentials");
             fs::write(&credentials, format!("GP_USER=synthetic-user\nGP_PASSWORD=synthetic-password-62917\nGP_GATEWAY=https://{gateway}\n")).unwrap();

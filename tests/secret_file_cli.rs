@@ -62,6 +62,13 @@ impl Fixture {
             .current_dir(&self.0)
             .arg("--config")
             .arg(config);
+        // Keep Windows' OS installation path for native socket-provider
+        // initialization. Credentials and application settings stay cleared.
+        #[cfg(windows)]
+        command.env(
+            "SystemRoot",
+            std::env::var_os("SystemRoot").expect("Windows fixture requires SystemRoot"),
+        );
         if session {
             command.args(["run", "--session-file"]).arg(path);
         } else {
@@ -167,9 +174,12 @@ fn malformed_session_json_fails_without_printing_its_contents() {
         b"{\"authcookie\":\"synthetic-secret-351901\",\"bad\": }",
     );
     let output = fixture.invoke(&path, true);
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("invalid session JSON"));
     assert!(!stderr.contains("351901"));
+    assert!(
+        stderr.contains("invalid session JSON"),
+        "unexpected synthetic-session diagnostic: {stderr}"
+    );
 }

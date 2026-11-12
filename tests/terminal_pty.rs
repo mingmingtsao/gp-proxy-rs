@@ -318,7 +318,11 @@ fn terminal_child() {
         ("typed_interrupt" | "external_interrupt" | "terminate" | "concurrent", Err(error)) => {
             assert_eq!(error.kind(), io::ErrorKind::Interrupted)
         }
-        _ => panic!("unexpected terminal result for synthetic case"),
+        (_, Err(error)) => panic!(
+            "unexpected terminal error for synthetic case {case}: {:?}",
+            error.kind()
+        ),
+        _ => panic!("unexpected successful terminal result for synthetic case {case}"),
     }
     if case != "hangup" {
         assert_eq!(
@@ -419,11 +423,15 @@ fn run_case(case: &str) {
         "partial_utf8_backspace" => send(master, &[0xe5, 0xaf, 127, b'o', b'k', b'\n'], until),
         "crlf" => send(master, b"abc\r\n", until),
         "limit" | "oversize" => {
-            for chunk in vec![b'x'; MAX_SECRET_BYTES + usize::from(case == "oversize")].chunks(128)
-            {
-                send(master, chunk, until);
-                std::thread::sleep(Duration::from_millis(30));
-            }
+            // These cases check the byte limit, not paced keystrokes. Let the
+            // nonblocking PTY apply backpressure: fixed sleeps between small
+            // chunks accumulate scheduler delay and can consume the child's
+            // read deadline before a valid boundary input is complete.
+            send(
+                master,
+                &vec![b'x'; MAX_SECRET_BYTES + usize::from(case == "oversize")],
+                until,
+            );
             if case == "limit" {
                 send(master, b"\n", until);
             }
