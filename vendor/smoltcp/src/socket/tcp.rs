@@ -513,6 +513,9 @@ pub struct Socket<'a> {
     /// The remote window size, relative to local_seq_no
     /// I.e. we're allowed to send octets until local_seq_no+remote_win_len
     remote_win_len: usize,
+    /// Largest accepted peer receive window (MAX.SND.WND, RFC 5961).
+    /// Bounds how far a reordered segment's ACK may trail SND.UNA.
+    remote_max_win_len: usize,
     /// The receive window scaling factor for remotes which support RFC 1323, None if unsupported.
     remote_win_scale: Option<u8>,
     /// Whether or not the remote supports selective ACK as described in RFC 2018.
@@ -614,6 +617,7 @@ impl<'a> Socket<'a> {
             remote_last_ack: None,
             remote_last_win: 0,
             remote_win_len: 0,
+            remote_max_win_len: 0,
             remote_win_shift: rx_cap_log2.saturating_sub(16) as u8,
             remote_win_scale: None,
             remote_has_sack: false,
@@ -931,6 +935,7 @@ impl<'a> Socket<'a> {
         self.remote_last_ack = None;
         self.remote_last_win = 0;
         self.remote_win_len = 0;
+        self.remote_max_win_len = 0;
         self.remote_win_scale = None;
         self.remote_win_shift = rx_cap_log2.saturating_sub(16) as u8;
         self.remote_mss = DEFAULT_MSS;
@@ -1615,6 +1620,10 @@ impl<'a> Socket<'a> {
         };
         let control_len = (sent_syn as usize) + (sent_fin as usize);
 
+        // A reordered data segment can carry an ACK older than SND.UNA.
+        // Ignore that ACK, not the segment's independently valid payload.
+        let stale_ack = repr.ack_number.is_some_and(|ack| ack < self.local_seq_no);
+
         // Reject unacceptable acknowledgements.
         match (self.state, repr.control, repr.ack_number) {
             // An RST received in response to initial SYN is acceptable if it acknowledges
@@ -1681,7 +1690,7 @@ impl<'a> Socket<'a> {
                     return Some(Self::rst_reply(ip_repr, repr));
                 }
             }
-            // Every acknowledgement must be for transmitted but unacknowledged data.
+            // ACKs may trail SND.UNA within the largest accepted peer window.
             (_, _, Some(ack_number)) => {
                 let unacknowledged = self.tx_buffer.len() + control_len;
 
@@ -1694,14 +1703,24 @@ impl<'a> Socket<'a> {
                     ack_min += 1;
                 }
 
-                if ack_number < ack_min {
-                    net_debug!(
-                        "duplicate ACK ({} not in {}...{})",
-                        ack_number,
-                        ack_min,
-                        ack_max
-                    );
+                if stale_ack
+                    && !matches!(
+                        self.state,
+                        State::Established | State::FinWait1 | State::FinWait2
+                    )
+                {
+                    // These closing states no longer accept segment text.
+                    // Preserve their existing treatment of old ACKs.
                     return None;
+                }
+
+                if ack_number < ack_min - self.remote_max_win_len {
+                    net_debug!(
+                        "ACK older than MAX.SND.WND ({} before {})",
+                        ack_number,
+                        ack_min - self.remote_max_win_len
+                    );
+                    return self.challenge_ack_reply(cx, ip_repr, repr);
                 }
 
                 if ack_number > ack_max {
@@ -1939,6 +1958,9 @@ impl<'a> Socket<'a> {
             // SYN packets in the LISTEN state change it to SYN-RECEIVED.
             (State::Listen, TcpControl::Syn) => {
                 tcp_trace!("received SYN");
+                // A reset half-open connection can return directly to LISTEN.
+                // Do not inherit the previous peer's ACK admission window.
+                self.remote_max_win_len = 0;
                 if let Some(max_seg_size) = repr.max_seg_size {
                     // Treat a zero MSS as if the option were absent, like Linux does.
                     if max_seg_size != 0 {
@@ -2104,13 +2126,17 @@ impl<'a> Socket<'a> {
             TcpControl::Syn => 0,
             _ => self.remote_win_scale.unwrap_or(0),
         };
-        let new_remote_win_len = (repr.window_len as usize) << (scale as usize);
-        let is_window_update = new_remote_win_len != self.remote_win_len;
-        self.remote_win_len = new_remote_win_len;
+        let mut is_window_update = false;
+        if !stale_ack {
+            let new_remote_win_len = (repr.window_len as usize) << (scale as usize);
+            is_window_update = new_remote_win_len != self.remote_win_len;
+            self.remote_win_len = new_remote_win_len;
+            self.remote_max_win_len = self.remote_max_win_len.max(new_remote_win_len);
 
-        self.congestion_controller
-            .inner_mut()
-            .set_remote_window(new_remote_win_len);
+            self.congestion_controller
+                .inner_mut()
+                .set_remote_window(new_remote_win_len);
+        }
 
         if ack_len > 0 {
             // Dequeue acknowledged octets.
@@ -2127,7 +2153,9 @@ impl<'a> Socket<'a> {
             self.tx_waker.wake();
         }
 
-        if let Some(ack_number) = repr.ack_number {
+        // An old ACK must not rewind SND.UNA or alter RTT, duplicate-ACK or
+        // congestion state. Its payload still follows the normal receive path.
+        if let Some(ack_number) = repr.ack_number.filter(|_| !stale_ack) {
             // TODO: When flow control is implemented,
             // refractor the following block within that implementation
 
@@ -3295,6 +3323,7 @@ mod test {
         s.remote_max_seq = LOCAL_SEQ;
         s.remote_ack_seq = LOCAL_SEQ;
         s.remote_win_len = 256;
+        s.remote_max_win_len = 256;
         s
     }
 
@@ -10261,5 +10290,251 @@ mod test {
             assert_eq!(s.state(), State::Established);
             assert_eq!(s.recv_queue(), 0);
         }
+    }
+
+    #[test]
+    fn test_gp_stale_ack_delivers_text_without_rewinding_sender_state() {
+        for advertised_window in [0, u16::MAX] {
+            let mut s = socket_established();
+            let start = s.local_seq_no;
+            s.send_slice(b"outgoing request").unwrap();
+            recv(&mut s, Instant::from_millis(100), |packet| {
+                assert_eq!(packet.unwrap().payload, b"outgoing request");
+            });
+            send(
+                &mut s,
+                Instant::from_millis(110),
+                &TcpRepr {
+                    seq_number: REMOTE_SEQ + 1,
+                    ack_number: Some(start + 4),
+                    window_len: 8,
+                    ..SEND_TEMPL
+                },
+            );
+            assert_eq!(s.send_queue(), b"outgoing request".len() - 4);
+            assert_eq!(s.remote_max_win_len, 256);
+            let before = format!(
+                "{:?}",
+                (
+                    s.local_seq_no,
+                    s.remote_last_seq,
+                    s.remote_max_seq,
+                    s.remote_ack_seq,
+                    s.remote_win_len,
+                    s.remote_max_win_len,
+                    s.local_rx_last_ack,
+                    s.local_rx_dup_acks,
+                    s.pending_fast_retransmit,
+                    s.rtte,
+                    &s.congestion_controller,
+                    s.timer,
+                )
+            );
+            send(
+                &mut s,
+                Instant::from_millis(120),
+                &TcpRepr {
+                    seq_number: REMOTE_SEQ + 1,
+                    ack_number: Some(start),
+                    window_len: advertised_window,
+                    payload: b"reordered reply",
+                    ..SEND_TEMPL
+                },
+            );
+            assert_eq!(s.recv_queue(), b"reordered reply".len());
+            assert_eq!(s.send_queue(), b"outgoing request".len() - 4);
+            assert_eq!(s.state(), State::Established);
+            let after = format!(
+                "{:?}",
+                (
+                    s.local_seq_no,
+                    s.remote_last_seq,
+                    s.remote_max_seq,
+                    s.remote_ack_seq,
+                    s.remote_win_len,
+                    s.remote_max_win_len,
+                    s.local_rx_last_ack,
+                    s.local_rx_dup_acks,
+                    s.pending_fast_retransmit,
+                    s.rtte,
+                    &s.congestion_controller,
+                    s.timer,
+                )
+            );
+            assert_eq!(before, after, "stale ACK changed send-side state");
+        }
+    }
+
+    #[test]
+    fn test_gp_stale_ack_bounds_and_sequence_checks_across_wraparound() {
+        for start in [
+            TcpSeqNumber(10),
+            TcpSeqNumber(i32::MAX - 16),
+            TcpSeqNumber(-16),
+        ] {
+            for (ack_delta, outside_sequence, accepted) in [
+                (-256, false, true),
+                (-1, false, true),
+                (-257, false, false),
+                (1, false, false),
+                (-1, true, false),
+            ] {
+                let mut s = socket_established();
+                s.local_seq_no = start;
+                s.remote_last_seq = start;
+                s.remote_max_seq = start;
+                s.remote_ack_seq = start;
+                let acknowledgement = if ack_delta < 0 {
+                    start - (-ack_delta) as usize
+                } else {
+                    start + ack_delta as usize
+                };
+                send(
+                    &mut s,
+                    Instant::from_millis(100),
+                    &TcpRepr {
+                        seq_number: REMOTE_SEQ + 1 + if outside_sequence { 65 } else { 0 },
+                        ack_number: Some(acknowledgement),
+                        // Cannot expand its own admission window.
+                        window_len: u16::MAX,
+                        payload: b"x",
+                        ..SEND_TEMPL
+                    },
+                );
+                assert_eq!(s.recv_queue(), usize::from(accepted));
+                assert_eq!(s.local_seq_no, start);
+                assert_eq!(s.remote_win_len, 256);
+                assert_eq!(s.remote_max_win_len, 256);
+                assert_eq!(s.state(), State::Established);
+            }
+        }
+    }
+
+    #[test]
+    fn test_gp_stale_ack_does_not_acknowledge_our_fin_or_bypass_fin_sequence() {
+        for (old_by, outside_sequence, accepted_fin) in
+            [(1, false, true), (257, false, false), (1, true, false)]
+        {
+            let mut s = socket_established();
+            s.send_slice(b"pending").unwrap();
+            s.close();
+            recv(&mut s, Instant::from_millis(100), |packet| {
+                assert_eq!(packet.unwrap().control, TcpControl::Fin);
+            });
+            let una = s.local_seq_no;
+            send(
+                &mut s,
+                Instant::from_millis(110),
+                &TcpRepr {
+                    control: TcpControl::Fin,
+                    seq_number: REMOTE_SEQ + 1 + if outside_sequence { 65 } else { 0 },
+                    ack_number: Some(una - old_by),
+                    window_len: u16::MAX,
+                    ..SEND_TEMPL
+                },
+            );
+            assert_eq!(
+                s.state(),
+                if accepted_fin {
+                    State::Closing
+                } else {
+                    State::FinWait1
+                }
+            );
+            assert_eq!(s.local_seq_no, una);
+            assert_eq!(s.send_queue(), b"pending".len());
+            assert_eq!(s.remote_win_len, 256);
+            assert_eq!(s.remote_max_win_len, 256);
+        }
+        for state in [
+            State::CloseWait,
+            State::Closing,
+            State::LastAck,
+            State::TimeWait,
+        ] {
+            let mut s = socket_established();
+            s.state = state;
+            let una = s.local_seq_no;
+            send(
+                &mut s,
+                Instant::from_millis(100),
+                &TcpRepr {
+                    seq_number: REMOTE_SEQ + 1,
+                    ack_number: Some(una - 1),
+                    payload: b"not accepted after remote FIN",
+                    ..SEND_TEMPL
+                },
+            );
+            assert_eq!(s.state(), state);
+            assert_eq!(s.local_seq_no, una);
+            assert_eq!(s.recv_queue(), 0);
+        }
+    }
+
+    #[test]
+    fn test_gp_max_peer_window_tracks_scaling_shrink_and_new_connections() {
+        let mut s = socket_syn_received();
+        s.remote_win_scale = Some(4);
+        s.remote_max_seq = s.local_seq_no + 1;
+        send(
+            &mut s,
+            Instant::from_millis(100),
+            &TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1),
+                window_len: 512,
+                ..SEND_TEMPL
+            },
+        );
+        assert_eq!(s.remote_win_len, 8192);
+        assert_eq!(s.remote_max_win_len, 8192);
+        send(
+            &mut s,
+            Instant::from_millis(110),
+            &TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1),
+                window_len: 0,
+                ..SEND_TEMPL
+            },
+        );
+        assert_eq!(s.remote_win_len, 0);
+        assert_eq!(s.remote_max_win_len, 8192);
+        s.reset();
+        assert_eq!(s.remote_max_win_len, 0);
+
+        // A SYN-RECEIVED RST returns directly to LISTEN, without reset().
+        let mut s = socket_syn_received();
+        s.listen_endpoint = LOCAL_END.into();
+        s.remote_max_win_len = 65_535;
+        send(
+            &mut s,
+            Instant::from_millis(100),
+            &TcpRepr {
+                control: TcpControl::Rst,
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: None,
+                ..SEND_TEMPL
+            },
+        );
+        assert_eq!(s.state(), State::Listen);
+        send(
+            &mut s,
+            Instant::from_millis(110),
+            &TcpRepr {
+                control: TcpControl::Syn,
+                seq_number: REMOTE_SEQ,
+                ack_number: None,
+                window_len: 32,
+                window_scale: Some(14),
+                ..SEND_TEMPL
+            },
+        );
+        assert_eq!(s.state(), State::SynReceived);
+        assert_eq!(s.remote_win_len, 32, "SYN window must not be scaled");
+        assert_eq!(
+            s.remote_max_win_len, 32,
+            "previous connection window leaked"
+        );
     }
 }

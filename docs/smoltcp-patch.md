@@ -21,6 +21,11 @@ GlobalProtect 协议是独立 Rust 实现，没有复制 OpenConnect 的 GPL 实
    这是对严格接收窗口表的局部扩展，不扩大数据窗口，也不放宽 SYN/FIN/RST 校验。
 3. 零窗口下 RTO 转入 persist；发送队列清空后退出 persist，保留未确认 FIN 的
    正常发送和重传，避免无探测的停滞或纯 ACK 风暴。
+4. 新 ACK 超前到达后，允许合法重排数据携带有界旧 ACK；不因旧 ACK 丢掉整段数据。
+   仅在允许接收数据的状态放行，按历史最大对端窗口限制 ACK 下界；旧 ACK 不更新
+   SND.UNA、发送窗、RTT 或拥塞状态，过新 ACK、过远旧 ACK 和无效 SEQ 仍拒绝。
+   依据 [RFC 9293 §3.10.7.4](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4)
+   的 ACK 与文本处理顺序及 RFC 5961 下界，避免重排被放大为反复 RTO。
 
 序列比较保留 wrapping 语义，输出失败不推进已发送边界，不禁用拥塞控制。
 这是本项目维护的补丁，不能视作通用 TCP 兼容性证明或上游已经包含的行为。

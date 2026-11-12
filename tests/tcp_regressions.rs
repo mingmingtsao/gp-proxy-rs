@@ -295,6 +295,53 @@ fn ack_cannot_discard_queued_but_unsent_bytes() {
 }
 
 #[test]
+fn reordered_payload_with_an_older_ack_does_not_wait_for_retransmission() {
+    let (mut client, mut server) = connected(8192, 42);
+    let request = b"already acknowledged client data";
+    let response = b"delayed response with an older acknowledgement";
+    client.socket().send_slice(request).unwrap();
+    server.socket().send_slice(response).unwrap();
+    // Neither endpoint has seen the other's payload when these packets form.
+    client.poll(100);
+    server.poll(100);
+    let request_packets = client.take_packets();
+    let delayed_response = server.take_packets();
+    assert_eq!(delayed_response.len(), 1);
+    let old_ack = TcpPacket::new_checked(
+        Ipv4Packet::new_checked(&delayed_response.front().unwrap()[..])
+            .unwrap()
+            .payload(),
+    )
+    .unwrap()
+    .ack_number();
+
+    // A later pure ACK overtakes the response, as in the impaired CI trace.
+    server.deliver(request_packets, false);
+    server.poll(101);
+    let fresh_ack = server.take_packets();
+    assert!(!fresh_ack.is_empty());
+    assert!(fresh_ack.iter().any(|packet| {
+        let ip = Ipv4Packet::new_checked(&packet[..]).unwrap();
+        let tcp = TcpPacket::new_checked(ip.payload()).unwrap();
+        tcp.payload().is_empty() && tcp.ack_number() > old_ack
+    }));
+    client.deliver(fresh_ack, false);
+    client.poll(102);
+    assert_eq!(client.socket().send_queue(), 0);
+    assert_eq!(client.socket().recv_queue(), 0);
+
+    // The ACK is stale, but the sequence, checksum and payload are still valid.
+    // No timer advancement or retransmission is allowed to repair the result.
+    client.deliver(delayed_response, false);
+    client.poll(103);
+    let mut received = Vec::new();
+    client.receive(&mut received);
+    assert_eq!(received, response);
+    assert_eq!(client.socket().send_queue(), 0);
+    assert_eq!(client.socket().state(), tcp::State::Established);
+}
+
+#[test]
 fn full_window_partial_loss_recovers_without_application_read() {
     let (mut left, mut right) = connected(8192, 42);
     let data = vec![0x51; 8192];

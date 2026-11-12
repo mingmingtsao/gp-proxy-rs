@@ -331,6 +331,14 @@ fn read_file(directory: &Directory, name: &str, maximum: usize) -> io::Result<Pi
         bytes,
     })
 }
+fn release_initialization_lock(lock: File) -> io::Result<()> {
+    // Initialization deliberately reopens this same inode using a new file
+    // description. A concurrent fork can inherit an alias despite CLOEXEC;
+    // closing our descriptor alone would retain the lease until that child
+    // execs/exits. Explicit unlock ends only this completed handoff, rather
+    // than changing the close-only lifetime of an ordinary Store.
+    lock.unlock().map_err(redact)
+}
 /// The non-cloneable permanent store lock spans the caller's entire transaction.
 /// Drop only closes descriptors. It never rolls back, removes, starts or stops.
 /// After any mutation error, discard this value and reopen: a rename may have
@@ -450,8 +458,9 @@ impl Store {
             owner.sync_all().map_err(redact)?;
             versions.file.sync_all().map_err(redact)?;
             directory.file.sync_all().map_err(redact)?;
-            // Close the staging descriptors before reopening the complete
-            // namespace. No external action has occurred at this point.
+            // Release the staging lease before reopening the complete namespace.
+            // No external action has occurred at this point.
+            release_initialization_lock(lock)?;
         }
         let store = Self::open(&stage)?;
         if store.record.gate != *gate || store.record.current.is_some() || store.pending.is_some() {
@@ -471,8 +480,13 @@ impl Store {
         .map_err(|e| redact(e.into()))?;
         checkpoint("store_published")?;
         parent.sync_all().map_err(redact)?;
-        drop(store);
+        store.release_for_reopen()?;
         Self::open(&root)
+    }
+
+    fn release_for_reopen(self) -> io::Result<()> {
+        // Consume all cached views before the caller opens the published path.
+        release_initialization_lock(self.lock.file)
     }
 
     pub fn open(root: &Path) -> io::Result<Self> {
@@ -2127,6 +2141,66 @@ mod tests {
         )
         .unwrap()
     }
+
+    #[test]
+    fn initialization_file_handoff_releases_an_inherited_lock_description() {
+        let f = Fixture::new();
+        let directory =
+            Directory::open(f.0.clone(), rustix::process::geteuid().as_raw(), ERRORS).unwrap();
+        let lock = open_file(&directory, "staging.lock", 128, true).unwrap();
+        lock.try_lock().unwrap();
+        let inherited = lock.try_clone().unwrap();
+        release_initialization_lock(lock).unwrap();
+
+        let reopened = open_file(&directory, "staging.lock", 128, false).unwrap();
+        reopened
+            .try_lock()
+            .expect("the successful initialization handoff must release inherited aliases");
+        drop(inherited);
+        let contender = open_file(&directory, "staging.lock", 128, false).unwrap();
+        let error: io::Error = contender.try_lock().unwrap_err().into();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        reopened.unlock().unwrap();
+    }
+
+    #[test]
+    fn initialization_store_handoff_reopens_with_an_inherited_lock_description() {
+        let f = Fixture::new();
+        let source = f.source(1);
+        let gate = f.gate(&source);
+        let store = Store::initialize(&f.root(), &gate).unwrap();
+        let inherited = store.lock.file.try_clone().unwrap();
+        store.release_for_reopen().unwrap();
+
+        let reopened = Store::open(&f.root())
+            .expect("the published store handoff must release inherited aliases");
+        assert_eq!(reopened.record.gate, gate);
+        drop(inherited);
+        assert_eq!(
+            Store::open(&f.root()).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        reopened.release_for_reopen().unwrap();
+    }
+
+    #[test]
+    fn ordinary_store_drop_keeps_the_inherited_permanent_lease() {
+        let f = Fixture::new();
+        let source = f.source(1);
+        let store = Store::initialize(&f.root(), &f.gate(&source)).unwrap();
+        let inherited = store.lock.file.try_clone().unwrap();
+        drop(store);
+        assert_eq!(
+            Store::open(&f.root()).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        // Explicitly release our test-owned duplicate, independent of whether
+        // another concurrent test briefly forked an additional descriptor.
+        inherited.unlock().unwrap();
+        let reopened = Store::open(&f.root()).unwrap();
+        reopened.release_for_reopen().unwrap();
+    }
+
     fn tree(path: &Path) -> Vec<(PathBuf, u64, u32, Vec<u8>)> {
         fn visit(path: &Path, result: &mut Vec<(PathBuf, u64, u32, Vec<u8>)>) {
             for entry in fs::read_dir(path).unwrap() {
